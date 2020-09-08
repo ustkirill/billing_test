@@ -1,37 +1,95 @@
 <!doctype html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport"
-          content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+        content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
     <title>Document</title>
 </head>
+
 <body>
 
-<button id="delay1">Delay 1 sec</button>
-<button id="delay3">Delay 3 sec</button>
-<button id="delay_random">Delay random</button>
+    <button id="delay1">Delay 1 sec</button>
+    <button id="delay3">Delay 3 sec</button>
+    <button id="delay_random">Delay random</button>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.3.0/socket.io.js"></script>
-<script>
-    const socket = io(':3000');
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.3.0/socket.io.js"></script>
+    <script>
+        const socket = io(':3000');
 
-    socket.on('paymentCreated', console.log);
+        async function request(url) {
+            if (typeof url !== 'string')
+                return Promise.reject({
+                    error: 'URL is not valid'
+                });
 
-    document.addEventListener('DOMContentLoaded', () => {
-        document.getElementById('delay1').addEventListener('click', () => {
-            fetch('http://localhost:3000/payment?delay=1000', { method: 'post' }).then(res => res.json()).then(console.log);
-        });
+            const API_HOST = 'http://localhost:3000';
+            const TIMEOUT = 300000; // 5 mins
 
-        document.getElementById('delay3').addEventListener('click', () => {
-            fetch('http://localhost:3000/payment?delay=3000', { method: 'post', credentials: 'include' }).then(res => res.json()).then(console.log);
-        });
+            try {
+                const response = await fetch(API_HOST + url, {
+                    method: 'post',
+                    credentials: 'include'
+                })
+                const data = await response.json();
 
-        document.getElementById('delay_random').addEventListener('click', () => {
-            fetch('http://localhost:3000/payment', { method: 'post', credentials: 'include' }).then(res => res.json()).then(console.log);
-        });
-    })
-</script>
+                return new Promise((resolve, reject) => {
+                    const requestTimeout = setTimeout(() => {
+                        reject({
+                            id: data.id,
+                            error: 'request timeout'
+                        });
+                    }, TIMEOUT);
+
+                    if (typeof socket !== 'object' || !socket.connected) {
+                        clearTimeout(requestTimeout);
+                        reject({
+                            error: 'Socket not connected'
+                        });
+                    }
+
+                    socket.on('paymentCreated', (socketData) => {
+                        if (typeof socketData === 'object' && socketData.id === data.id) {
+                            clearTimeout(requestTimeout);
+                            resolve({
+                                id: data.id,
+                                payload: {
+                                    ...data.payload,
+                                    ...socketData.payload
+                                }
+                            })
+                        }
+                    });
+                })
+            } catch (err) {
+                return Promise.reject({
+                    error: err
+                });
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('delay1').addEventListener('click', () => {
+                request('/payment?delay=1000')
+                    .catch(console.log)
+                    .then(console.log);
+            });
+
+            document.getElementById('delay3').addEventListener('click', () => {
+                request('/payment?delay=3000')
+                    .catch(console.log)
+                    .then(console.log);
+            });
+
+            document.getElementById('delay_random').addEventListener('click', () => {
+                request('/payment')
+                    .catch(console.log)
+                    .then(console.log);
+            });
+        })
+    </script>
 </body>
+
 </html>
